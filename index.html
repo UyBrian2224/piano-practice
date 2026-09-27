@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#1f3a5f" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" />
+  <title>Piano Practice</title>
+</head>
+<body>
+  <header class="bar">
+    <select id="song" title="Chọn bài"></select>
+    <label class="file">Mở MusicXML<input id="file" type="file" accept=".musicxml,.xml" /></label>
+    <select id="hands" title="Tay tập">
+      <option value="both">Hai tay</option>
+      <option value="right">Tay phải</option>
+      <option value="left">Tay trái</option>
+    </select>
+    <button id="btn-restart">↺ Tập lại</button>
+    <button id="btn-listen">🔊 Nghe mẫu</button>
+    <span class="metro">
+      <button id="btn-metro">♩ Nhịp</button>
+      <input id="bpm" type="range" min="40" max="160" value="80" />
+      <b id="bpm-val">80</b>
+    </span>
+    <span class="spacer"></span>
+    <button id="btn-connect">Kết nối đàn</button>
+    <span id="midi-status" class="warn">Chưa kết nối</span>
+    <span id="pedal" title="Pedal sustain">P</span>
+  </header>
+  <main id="score"></main>
+  <section class="status">
+    <span id="hint"></span>
+    <span id="stats"></span>
+    <span id="result"></span>
+  </section>
+  <div id="keyboard"></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
