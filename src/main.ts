@@ -19,7 +19,7 @@ function showStep() {
   const { step, hands } = wait;
   kb.setExpected(hands === "left" ? [] : step.right, hands === "right" ? [] : step.left);
   $("hint").textContent = wait.ended
-    ? "Hoàn thành bài!"
+    ? (wait.correct === 0 ? "Bài này không có nốt cho tay đã chọn" : "Hoàn thành bài!")
     : "Cần bấm: " + [...wait.need].sort((a, b) => a - b).map(noteName).join(" + ");
   $("stats").textContent = `Đúng: ${wait.correct} · Sai: ${wait.wrong}`;
 }

@@ -18,6 +18,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm test        # unit test fail → không deploy
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
