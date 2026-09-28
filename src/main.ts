@@ -4,6 +4,7 @@ import { Keyboard, noteName } from "./keyboard";
 import { Metronome } from "./metronome";
 import { Score } from "./score";
 import { WaitMode, type Hands } from "./core/waitMode";
+import { LatencyPanel } from "./latencyPanel";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -12,6 +13,7 @@ const kb = new Keyboard($("keyboard"));
 const metro = new Metronome();
 const score = new Score($("score"));
 const wait = new WaitMode(score);
+const latency = new LatencyPanel();
 let songTitle = "";
 
 // ---------- Hiển thị trạng thái chế độ chờ ----------
@@ -32,6 +34,7 @@ function finish() {
 
 function onNoteOn(m: number, time: number) {
   kb.setPressed(m, true);
+  if (latency.isOpen) return latency.onNote(time); // đang đo độ trễ: không tính vào bài
   const r = wait.noteOn(m, time);
   if (r === "ignored") return;
   if (r === "wrong") kb.flashWrong(m);
@@ -88,6 +91,7 @@ function restart() {
 }
 
 $("btn-restart").onclick = restart;
+$("btn-latency").onclick = () => latency.open();
 $<HTMLSelectElement>("hands").onchange = (e) => {
   wait.setHands((e.target as HTMLSelectElement).value as Hands);
   $("result").textContent = "";

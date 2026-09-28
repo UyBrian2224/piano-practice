@@ -34,3 +34,20 @@ body { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; 
 .key.exp-l { background: var(--left); } .key.black.exp-l { background: #b06a10; }
 .key.pressed { box-shadow: inset 0 -10px 0 var(--ok); }
 .key.wrong { background: var(--bad) !important; }
+
+/* Hộp thoại đo độ trễ (tạm, sẽ vào màn Cài đặt ở giai đoạn UI) */
+dialog.latency { border: none; border-radius: 12px; padding: 20px 24px; width: min(560px, 92vw); color: var(--ink); }
+dialog.latency::backdrop { background: rgb(0 0 0 / .45); }
+.latency h2 { margin: 0 0 8px; font-size: 22px; }
+.latency p { font-size: 16px; margin: 8px 0; }
+.lat-flash { width: 64px; height: 64px; border-radius: 8px; background: #e3e6ea; margin: 12px auto; }
+.lat-flash.on { background: var(--right); }
+.lat-count { text-align: center; font-size: 28px; font-weight: 700; }
+.latency table { width: 100%; border-collapse: collapse; font-size: 16px; font-variant-numeric: tabular-nums; }
+.latency th, .latency td { padding: 6px 8px; text-align: right; border-bottom: 1px solid #e3e6ea; }
+.latency th:first-child, .latency td:first-child { text-align: left; }
+.lat-note { color: var(--muted); font-size: 14px !important; }
+.lat-verdict { font-size: 20px !important; font-weight: 700; text-align: center; }
+.lat-verdict.pass { color: var(--ok); } .lat-verdict.fail { color: var(--bad); }
+.lat-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 12px; }
+.lat-actions button { font: inherit; font-size: 16px; min-height: 48px; padding: 8px 16px; border-radius: 8px; border: 1px solid #cfd5dd; background: #fff; cursor: pointer; }

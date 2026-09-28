@@ -50,8 +50,8 @@
 | Bản nhạc | `opensheetmusicdisplay` ^2.1 |
 | Âm thanh phụ (metronome) | Web Audio API |
 | Lưu trữ | localStorage (giai đoạn 1) → **IndexedDB qua Dexie.js** (giai đoạn 3) |
-| Test | Vitest (unit) + Playwright (e2e, giả lập MIDI) — *bổ sung ở giai đoạn 1.5* |
-| Hosting | GitHub Pages qua GitHub Actions (`.github/workflows/deploy.yml`) |
+| Test | Vitest 5 (unit, `src/**/*.test.ts`) + Playwright (e2e trong `e2e/`, đàn MIDI ảo ở `e2e/fake-midi.ts`) |
+| Hosting | GitHub Pages qua GitHub Actions (`.github/workflows/deploy.yml`, chạy unit test trước khi build) — repo https://github.com/UyBrian2224/piano-practice · app **https://uybrian2224.github.io/piano-practice/** |
 | Soạn bài | MuseScore 4 → Export MusicXML; bài public domain từ IMSLP / Mutopia |
 
 ```bash
@@ -59,6 +59,8 @@ npm install          # cài đặt
 npm run dev          # chạy local: http://localhost:5173 (thử bằng phím máy tính A W S E D F T G Y H U J K, Z/X đổi quãng 8)
 npm run build        # tsc --noEmit && vite build
 npm run preview      # xem bản build
+npm test             # unit test (Vitest)
+npm run test:e2e     # e2e (Playwright, tự bật dev server cổng 5174; lần đầu: npx playwright install chromium)
 python3 tools/make_songs.py   # sinh lại 4 bài mẫu MusicXML
 ```
 
@@ -66,19 +68,24 @@ Debug trực tiếp trên tablet: cắm USB vào PC, bật USB debugging → `ch
 
 ---
 
-## 4. Hiện trạng code (Giai đoạn 1 — ĐÃ XONG, đã test tự động trên Chromium)
+## 4. Hiện trạng code (GĐ 1 xong · GĐ 1.5 gần xong, chờ đo trên tablet)
 
 ```
 index.html                 Khung giao diện (thanh công cụ, vùng bản nhạc, trạng thái, bàn phím)
-src/main.ts                Điều phối: chế độ chờ, thống kê, nhật ký, sự kiện UI
-src/midi.ts                Web MIDI in/out + giả lập bằng bàn phím máy tính
-src/score.ts               OSMD: load/render MusicXML, đọc nốt dưới con trỏ, lọc theo tay
+src/main.ts                Điều phối: nối MIDI/bàn phím ↔ WaitMode ↔ hiển thị, nhật ký, sự kiện UI
+src/core/waitMode.ts       Logic chế độ chờ THUẦN (Hands, Step, StepSource, required, WaitMode) + test
+src/core/midiParse.ts      Giải mã byte MIDI → noteon/noteoff/sustain + test
+src/core/latency.ts        Thống kê min/avg/p95/max + test
+src/latencyPanel.ts        Hộp thoại "⏱ Độ trễ" (50 lần bấm → p95, mục tiêu < 50 ms)
+src/midi.ts                Web MIDI in/out (truyền MIDIMessageEvent.timeStamp) + giả lập bằng bàn phím máy tính
+src/score.ts               OSMD: load/render MusicXML, đọc nốt dưới con trỏ (implements StepSource)
 src/keyboard.ts            Bàn phím 88 phím (A0–C8), tô màu nốt cần bấm / đang bấm / sai
 src/metronome.ts           Máy đếm nhịp Web Audio (lookahead scheduler)
 src/style.css              Giao diện (sẽ làm lại ở giai đoạn UI — xem mục 7)
 public/songs/*.musicxml    4 bài mẫu + index.json
 public/manifest.webmanifest, public/icon.svg   PWA
 tools/make_songs.py        Script sinh bài mẫu
+e2e/                       Playwright: practice.spec.ts (10 kịch bản) + fake-midi.ts
 .github/workflows/deploy.yml   Deploy GitHub Pages
 ```
 
@@ -88,6 +95,8 @@ Tính năng đã có: kết nối MIDI (tự nhận khi cắm/rút), hiển th�
 - **Số MIDI từ OSMD = `note.halfTone + 12`** (đã test: Mi4 → 64, Đô3 → 48).
 - Tay: `note.ParentStaffEntry.ParentStaff.idInMusicSheet` — `0` = tay phải, `1` = tay trái.
 - Bỏ qua dấu lặng (`note.isRest()`) và nốt nối không phải nốt đầu (`note.NoteTie.StartNote !== note`).
+- Mọi callback nốt nhận `time` = `timeStamp` của sự kiện (MIDI/Keyboard/Pointer), cùng gốc với `performance.now()`.
+- Đo độ trễ: dùng `performance.now()` TRONG callback rAF, không dùng tham số của rAF (tham số = lúc khung bắt đầu, có thể sớm hơn timeStamp → số âm; e2e đã bắt được lỗi này).
 - Chế độ chờ: tích luỹ `hit` các nốt đúng trong bước hiện tại; đủ tập `need` → `cursor.next()`. Tự nhảy qua vị trí không có nốt cho tay đang tập.
 - Đàn Yamaha gửi **Active Sensing (0xFE)** liên tục → luôn lọc bỏ.
 - **CLP-330 quirk**: trên Linux, cổng OUT của đàn chỉ hoạt động khi cổng IN đang được lắng nghe liên tục → app **luôn mở tất cả input**. Nếu "Nghe mẫu" không kêu → nghi vấn đầu tiên là quirk này.
@@ -97,15 +106,13 @@ Tính năng đã có: kết nối MIDI (tự nhận khi cắm/rút), hiển th�
 - [ ] Kết nối trong app (ngoài app monitor) · [ ] Note on/off · [ ] Pedal · [ ] Chơi hết Bài 1 · [ ] "Nghe mẫu" (MIDI OUT)
 - Đã biết: tablet + cáp USB-C + CLP-330 chạy được với **một app học đàn khác** → phần cứng/driver ổn.
 
-### Lỗi đã biết (QA rà 2026-09-27)
-- **Major** — `midi.ts` bỏ qua `MIDIMessageEvent.timeStamp` (trái D3) → sửa ở task 1.5.3, bắt buộc trước GĐ 2.
-- **Major** — logic chế độ chờ lẫn DOM trong `main.ts` → tách ra `src/core/` ở task 1.5.1.
-- Minor — khởi động (`fetch index.json`, `loadSong`) không bắt lỗi; thời gian bài tính từ lúc load thay vì nốt đầu tiên.
+### Lỗi QA rà 2026-09-27 — ĐÃ SỬA 2026-09-28
+- ~~Major — `midi.ts` bỏ qua `timeStamp`~~ · ~~Major — logic chế độ chờ lẫn DOM~~ · ~~Minor — khởi động không bắt lỗi; thời gian tính từ lúc load~~ · ~~Minor — tay đã chọn không có nốt vẫn báo "Hoàn thành"~~
 
 ### Giai đoạn 0 (chuẩn bị) — 2026-09-27
 - [x] `npm install`, `npm run build` sạch (nâng `chunkSizeWarningLimit` vì OSMD ~1,3 MB)
 - [x] `git init` (nhánh `main`)
-- [ ] Tạo repo GitHub + bật Pages (Source: GitHub Actions) + push → lấy URL HTTPS
+- [x] Tạo repo GitHub + bật Pages + push → deploy thành công (2026-09-28)
 - [ ] Uy test trên tablet theo checklist ở trên
 
 ---
@@ -116,9 +123,9 @@ Mỗi giai đoạn chỉ bắt đầu khi giai đoạn trước đạt **Definit
 
 | GĐ | Tên | Nội dung chính | Tiêu chí nghiệm thu |
 |---|---|---|---|
-| **0** | Chuẩn bị | 🔄 git, build sạch, deploy GitHub Pages, test trên tablet (xem mục 4) | App chạy qua URL HTTPS trên tablet với CLP-330 |
+| **0** | Chuẩn bị | 🔄 Đã deploy; chờ Uy test trên tablet (xem mục 4) | App chạy qua URL HTTPS trên tablet với CLP-330 |
 | **1** | Lõi luyện tập | ✅ Xong (xem mục 4) | Test tự động pass; chờ test trên thiết bị |
-| **1.5** | Nền tảng chất lượng | Vitest cho logic chế độ chờ; Playwright e2e giả lập MIDI; **màn hình đo độ trễ** (timeStamp → khung hình vẽ, hiển thị min/avg/p95 sau 50 lần bấm); tách logic khỏi DOM; **truyền `timeStamp` từ midi.ts** | p95 độ trễ hiển thị < 50 ms trên tablet |
+| **1.5** | Nền tảng chất lượng | 🔄 Code xong (26 unit + 10 e2e pass), chờ đo p95 trên tablet. Vitest cho logic chế độ chờ; Playwright e2e giả lập MIDI; **màn hình đo độ trễ** (timeStamp → khung hình vẽ, hiển thị min/avg/p95 sau 50 lần bấm); tách logic khỏi DOM; **truyền `timeStamp` từ midi.ts** | p95 độ trễ hiển thị < 50 ms trên tablet |
 | **UI** | Làm lại giao diện | Theo mục 7 (dùng skill UI/UX Pro Max); màn hình Home/Thư viện bài/Luyện tập/Tiến độ/Cài đặt; **công tắc "ẩn tô phím"** (bước 1 của "giảm dần trợ giúp") | Checklist UI mục 7.4 pass |
 | **2** | Chơi theo nhịp | Chế độ play-along (con trỏ chạy theo BPM), đếm dạo 1 ô nhịp, chấm lệch nhịp (ms) từng nốt, tô màu sớm/đúng/muộn trên bản nhạc; **lặp đoạn A–B**; tốc độ 50–100%; tự tăng tốc khi đạt ≥ 90% | Chấm điểm sai số < 10 ms so với timeStamp; lặp A–B không rò rỉ trạng thái |
 | **3** | Tiến độ & dữ liệu | IndexedDB (Dexie): phiên tập, điểm từng lần, nốt hay sai; biểu đồ tiến độ theo ngày/bài; streak; xuất/nhập JSON; service worker chạy **offline** | Mất mạng vẫn tập được; khôi phục đủ dữ liệu từ file JSON |

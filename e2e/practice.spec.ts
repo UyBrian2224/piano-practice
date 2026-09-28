@@ -87,3 +87,17 @@ test("Nghe mẫu phát đúng nốt cần bấm ra MIDI OUT", async ({ page }) =
   const sent = await sentBytes(page);
   expect(sent.filter((d) => d[0] === 0x90).map((d) => d[1]).sort()).toEqual([...notes].sort());
 });
+
+test("đo độ trễ: 50 nốt → có kết luận p95, không tính vào bài", async ({ page }) => {
+  await page.click("#btn-latency");
+  const dlg = page.locator("dialog.latency");
+  await expect(dlg).toBeVisible();
+  for (let i = 0; i < 50; i++) {
+    await midiSend(page, [0x90, 60, 80]);
+    await midiSend(page, [0x90, 60, 0]);
+  }
+  await expect(dlg.locator(".lat-count")).toHaveText("50 / 50");
+  await expect(dlg.locator(".lat-verdict")).toContainText("p95");
+  await dlg.getByText("Đóng").click();
+  await expect(page.locator("#stats")).toContainText("Đúng: 0 · Sai: 0");
+});
