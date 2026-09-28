@@ -1,15 +1,9 @@
-// Hiển thị bản nhạc (MusicXML) bằng OpenSheetMusicDisplay + logic "Chế độ chờ"
+// Hiển thị bản nhạc (MusicXML) bằng OpenSheetMusicDisplay, cung cấp các bước nốt cho Chế độ chờ
 
 import { OpenSheetMusicDisplay, type Note } from "opensheetmusicdisplay";
+import type { Step, StepSource } from "./core/waitMode";
 
-export type Hands = "both" | "right" | "left";
-
-export interface Step {
-  right: number[]; // số MIDI tay phải (khuông 1)
-  left: number[];  // số MIDI tay trái (khuông 2)
-}
-
-export class Score {
+export class Score implements StepSource {
   readonly osmd: OpenSheetMusicDisplay;
 
   constructor(container: HTMLElement) {
@@ -52,9 +46,3 @@ export class Score {
   reset() { this.osmd.cursor.reset(); }
 }
 
-/** Nốt cần bấm theo lựa chọn tay */
-export function required(step: Step, hands: Hands): number[] {
-  if (hands === "right") return step.right;
-  if (hands === "left") return step.left;
-  return [...step.right, ...step.left];
-}

@@ -1,10 +1,13 @@
 // Nhận tín hiệu từ đàn qua Web MIDI + nguồn giả lập (bàn phím máy tính / chạm phím trên màn hình)
 
-export type NoteHandler = (midi: number, velocity: number) => void;
+import { parseMidi } from "./core/midiParse";
+
+/** `time` = timeStamp của sự kiện (ms, cùng gốc với performance.now) — KHÔNG phải lúc JS xử lý (D3) */
+export type NoteHandler = (midi: number, velocity: number, time: number) => void;
 
 export class MidiInput {
   onNoteOn: NoteHandler = () => {};
-  onNoteOff: (midi: number) => void = () => {};
+  onNoteOff: (midi: number, time: number) => void = () => {};
   onSustain: (down: boolean) => void = () => {};
   onDevicesChanged: (inputs: string[], outputs: string[]) => void = () => {};
 
@@ -28,7 +31,7 @@ export class MidiInput {
     const ins: string[] = [];
     this.access.inputs.forEach((input) => {
       ins.push(input.name ?? "MIDI In");
-      input.onmidimessage = (e) => this.handle(e.data);
+      input.onmidimessage = (e) => this.handle(e.data, e.timeStamp);
     });
     const outs: string[] = [];
     this.output = null;
@@ -39,15 +42,12 @@ export class MidiInput {
     this.onDevicesChanged(ins, outs);
   }
 
-  private handle(data: Uint8Array | null) {
-    if (!data || data.length < 1) return;
-    const status = data[0] & 0xf0;
-    if (data[0] === 0xfe || data[0] === 0xf8) return; // Active Sensing / Clock: đàn Yamaha gửi liên tục, bỏ qua
-    const d1 = data[1] ?? 0;
-    const d2 = data[2] ?? 0;
-    if (status === 0x90 && d2 > 0) this.onNoteOn(d1, d2);
-    else if (status === 0x80 || (status === 0x90 && d2 === 0)) this.onNoteOff(d1);
-    else if (status === 0xb0 && d1 === 64) this.onSustain(d2 >= 64);
+  private handle(data: Uint8Array | null, time: number) {
+    const ev = parseMidi(data);
+    if (!ev) return;
+    if (ev.type === "noteon") this.onNoteOn(ev.note, ev.velocity, time);
+    else if (ev.type === "noteoff") this.onNoteOff(ev.note, time);
+    else this.onSustain(ev.down);
   }
 
   /** Phát một nốt ra đàn (gợi ý âm). Kênh 1. */
@@ -71,14 +71,14 @@ export class MidiInput {
       const i = map.indexOf(k);
       if (i < 0 || held.has(k)) return;
       held.add(k);
-      this.onNoteOn(base + i, 80);
+      this.onNoteOn(base + i, 80, e.timeStamp);
     });
     window.addEventListener("keyup", (e) => {
       const k = e.key.toLowerCase();
       const i = map.indexOf(k);
       if (i < 0) return;
       held.delete(k);
-      this.onNoteOff(base + i);
+      this.onNoteOff(base + i, e.timeStamp);
     });
   }
 }

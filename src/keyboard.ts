@@ -8,7 +8,7 @@ export const noteName = (m: number) => `${NAMES[m % 12]}${Math.floor(m / 12) - 1
 
 export class Keyboard {
   private keys = new Map<number, HTMLDivElement>();
-  onTouch: (midi: number, down: boolean) => void = () => {};
+  onTouch: (midi: number, down: boolean, time: number) => void = () => {};
 
   constructor(root: HTMLElement) {
     root.classList.add("kb");
@@ -30,9 +30,9 @@ export class Keyboard {
         if (m % 12 === 0) k.innerHTML = `<span>${m === 60 ? "C4" : "C" + (m / 12 - 1)}</span>`;
         wi++;
       }
-      k.addEventListener("pointerdown", (e) => { e.preventDefault(); this.onTouch(m, true); });
-      k.addEventListener("pointerup", () => this.onTouch(m, false));
-      k.addEventListener("pointerleave", (e) => { if (e.buttons) this.onTouch(m, false); });
+      k.addEventListener("pointerdown", (e) => { e.preventDefault(); this.onTouch(m, true, e.timeStamp); });
+      k.addEventListener("pointerup", (e) => this.onTouch(m, false, e.timeStamp));
+      k.addEventListener("pointerleave", (e) => { if (e.buttons) this.onTouch(m, false, e.timeStamp); });
       root.appendChild(k);
       this.keys.set(m, k);
     }

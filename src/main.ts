@@ -2,7 +2,8 @@ import "./style.css";
 import { MidiInput } from "./midi";
 import { Keyboard, noteName } from "./keyboard";
 import { Metronome } from "./metronome";
-import { Score, required, type Hands, type Step } from "./score";
+import { Score } from "./score";
+import { WaitMode, type Hands } from "./core/waitMode";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -10,67 +11,42 @@ const midi = new MidiInput();
 const kb = new Keyboard($("keyboard"));
 const metro = new Metronome();
 const score = new Score($("score"));
-
-// ---------- Trạng thái buổi tập ----------
-let hands: Hands = "both";
-let step: Step = { right: [], left: [] };
-let need = new Set<number>();
-const hit = new Set<number>();
-let stats = { correct: 0, wrong: 0, start: 0 };
+const wait = new WaitMode(score);
 let songTitle = "";
 
-function refreshStep() {
-  // Tự nhảy qua các vị trí không có nốt cho tay đang tập (vd. tập tay phải, chỗ chỉ có tay trái)
-  step = score.current();
-  while (!score.ended && required(step, hands).length === 0) {
-    score.next();
-    step = score.current();
-  }
-  need = new Set(required(step, hands));
-  hit.clear();
+// ---------- Hiển thị trạng thái chế độ chờ ----------
+function showStep() {
+  const { step, hands } = wait;
   kb.setExpected(hands === "left" ? [] : step.right, hands === "right" ? [] : step.left);
-  $("hint").textContent = score.ended
+  $("hint").textContent = wait.ended
     ? "Hoàn thành bài!"
-    : "Cần bấm: " + [...need].sort((a, b) => a - b).map(noteName).join(" + ");
-  if (score.ended) finish();
+    : "Cần bấm: " + [...wait.need].sort((a, b) => a - b).map(noteName).join(" + ");
+  $("stats").textContent = `Đúng: ${wait.correct} · Sai: ${wait.wrong}`;
 }
 
 function finish() {
-  const secs = Math.round((performance.now() - stats.start) / 1000);
-  const acc = stats.correct + stats.wrong === 0 ? 100 : Math.round((stats.correct / (stats.correct + stats.wrong)) * 100);
-  $("result").textContent = `Xong "${songTitle}" — ${secs}s — chính xác ${acc}% (${stats.wrong} nốt sai)`;
-  saveLog({ date: new Date().toISOString(), song: songTitle, hands, secs, acc, wrong: stats.wrong });
+  const s = wait.summary();
+  $("result").textContent = `Xong "${songTitle}" — ${s.secs}s — chính xác ${s.acc}% (${s.wrong} nốt sai)`;
+  saveLog({ date: new Date().toISOString(), song: songTitle, hands: wait.hands, secs: s.secs, acc: s.acc, wrong: s.wrong });
 }
 
-function onNoteOn(m: number) {
+function onNoteOn(m: number, time: number) {
   kb.setPressed(m, true);
-  if (score.ended || stats.start === 0) return;
-  if (need.has(m)) {
-    hit.add(m);
-    if ([...need].every((n) => hit.has(n))) {
-      stats.correct++;
-      score.next();
-      refreshStep();
-    }
-  } else {
-    stats.wrong++;
-    kb.flashWrong(m);
-  }
-  updateStats();
+  const r = wait.noteOn(m, time);
+  if (r === "ignored") return;
+  if (r === "wrong") kb.flashWrong(m);
+  showStep();
+  if (r === "finished") finish();
 }
 
-function updateStats() {
-  $("stats").textContent = `Đúng: ${stats.correct} · Sai: ${stats.wrong}`;
-}
-
-midi.onNoteOn = (m) => onNoteOn(m);
+midi.onNoteOn = (m, _vel, time) => onNoteOn(m, time);
 midi.onNoteOff = (m) => kb.setPressed(m, false);
 midi.onSustain = (down) => $("pedal").classList.toggle("on", down);
 midi.onDevicesChanged = (ins) => {
   $("midi-status").textContent = ins.length ? "🎹 " + ins.join(", ") : "Chưa thấy đàn — kiểm tra cáp USB";
   $("midi-status").className = ins.length ? "ok" : "warn";
 };
-kb.onTouch = (m, down) => (down ? onNoteOn(m) : kb.setPressed(m, false));
+kb.onTouch = (m, down, time) => (down ? onNoteOn(m, time) : kb.setPressed(m, false));
 midi.enableComputerKeyboard();
 
 // ---------- Nhật ký tập (localStorage, giai đoạn sau chuyển IndexedDB) ----------
@@ -96,26 +72,29 @@ $("btn-connect").onclick = async () => {
 };
 
 async function loadSong(src: string, title: string) {
-  songTitle = title;
-  await score.load(src);
-  restart();
+  try {
+    await score.load(src);
+    songTitle = title;
+    restart();
+  } catch (e) {
+    $("hint").textContent = `Không mở được bài "${title}": ${String((e as Error).message ?? e)}`;
+  }
 }
 
 function restart() {
-  score.reset();
-  stats = { correct: 0, wrong: 0, start: performance.now() };
+  wait.restart();
   $("result").textContent = "";
-  updateStats();
-  refreshStep();
+  showStep();
 }
 
 $("btn-restart").onclick = restart;
 $<HTMLSelectElement>("hands").onchange = (e) => {
-  hands = (e.target as HTMLSelectElement).value as Hands;
-  restart();
+  wait.setHands((e.target as HTMLSelectElement).value as Hands);
+  $("result").textContent = "";
+  showStep();
 };
 $("btn-listen").onclick = () => {
-  const ok = [...need].map((m) => midi.playOnPiano(m)).every(Boolean);
+  const ok = [...wait.need].map((m) => midi.playOnPiano(m)).every(Boolean);
   if (!ok) $("hint").textContent += " (chưa có cổng MIDI OUT để phát ra đàn)";
 };
 
@@ -138,13 +117,22 @@ $("btn-metro").onclick = () => {
 
 // ---------- Khởi động ----------
 (async () => {
-  const list: { file: string; title: string }[] = await (await fetch("songs/index.json")).json();
-  const sel = $<HTMLSelectElement>("song");
-  sel.innerHTML = list.map((s) => `<option value="${s.file}">${s.title}</option>`).join("");
-  await loadSong(`songs/${list[0].file}`, list[0].title);
   if (midi.supported) $("btn-connect").click();
   else $("midi-status").textContent = "Trình duyệt này không có Web MIDI — dùng bàn phím máy tính (A W S E D…) để thử";
+  try {
+    const list: { file: string; title: string }[] = await (await fetch("songs/index.json")).json();
+    const sel = $<HTMLSelectElement>("song");
+    sel.innerHTML = list.map((s) => `<option value="${s.file}">${s.title}</option>`).join("");
+    await loadSong(`songs/${list[0].file}`, list[0].title);
+  } catch {
+    $("hint").textContent = "Không tải được danh sách bài — kiểm tra mạng, hoặc bấm “Mở MusicXML” để mở file trên máy";
+  }
 })();
 
 // Cho phép kiểm thử tự động
-(window as unknown as Record<string, unknown>).__piano = { onNoteOn, score: () => score, need: () => [...need] };
+(window as unknown as Record<string, unknown>).__piano = {
+  onNoteOn: (m: number) => onNoteOn(m, performance.now()),
+  score: () => score,
+  need: () => [...wait.need],
+  wait: () => wait,
+};
